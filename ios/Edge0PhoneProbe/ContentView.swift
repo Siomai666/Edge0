@@ -22,8 +22,8 @@ private enum LocalModel: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .edge8: "Edge0 8B"
-        case .edge35b: "Edge0 35B"
+        case .edge8: "Pablo Jhob 8B"
+        case .edge35b: "Pablo Jhob 35B"
         }
     }
     var folderName: String {
@@ -410,7 +410,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(chat.selectedModel?.title ?? "Edge0")
+            Text(chat.selectedModel?.title ?? "Pablo Jhob")
                 .font(.headline.weight(.semibold))
             Spacer()
             Button(action: chat.chooseAnotherModel) {
