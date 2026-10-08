@@ -1,6 +1,7 @@
 import Edge0MLX
 import Darwin
 import Foundation
+import LucyCore
 import SwiftUI
 
 private struct ChatMessage: Identifiable, Sendable {
@@ -52,6 +53,7 @@ private actor ChatRuntime {
     func reply(to text: String,
                maxTokens: Int? = nil,
                thinking: Bool,
+               systemPrompt: String? = nil,
                onText: @escaping @Sendable (String) -> Void) async throws -> Edge0GenerationResult {
         let shouldContinue = { @Sendable in
             !withUnsafeCurrentTask { $0?.isCancelled ?? false }
@@ -61,10 +63,12 @@ private actor ChatRuntime {
             if let maxTokens {
                 return try engine.reply(
                     to: text, maxTokens: maxTokens, thinking: thinking,
+                    systemPrompt: systemPrompt,
                     onText: onText, shouldContinue: shouldContinue)
             }
             return try engine.reply(
-                to: text, thinking: thinking, onText: onText, shouldContinue: shouldContinue)
+                to: text, thinking: thinking, systemPrompt: systemPrompt,
+                onText: onText, shouldContinue: shouldContinue)
         case .edge35b(let engine):
             if let maxTokens {
                 return try await engine.reply(
@@ -104,6 +108,7 @@ private final class ChatViewModel: ObservableObject {
     @Published private(set) var selectedModel: LocalModel?
 
     private let runtime = ChatRuntime()
+    let voice = VoiceOutput()
     private var generationTask: Task<Void, Never>?
 
     var isRunning: Bool { phase == .preparing || phase == .generating }
@@ -161,6 +166,7 @@ private final class ChatViewModel: ObservableObject {
 
     func chooseAnotherModel() {
         guard !isRunning else { return }
+        voice.stop()
         messages.removeAll()
         input = ""
         selectedModel = nil
@@ -182,18 +188,21 @@ private final class ChatViewModel: ObservableObject {
         messages.append(ChatMessage(id: assistantID, role: .assistant,
                                     text: "", detail: nil))
         phase = .generating
+        voice.beginReply()
         generationTask = Task {
             do {
                 let result = try await runtime.reply(
                     to: text,
                     maxTokens: maxTokens,
                     thinking: thinkingEnabled,
+                    systemPrompt: selectedModel == .edge8 ? AssistantPrefs.persona.systemPrompt() : nil,
                     onText: { [weak self] partial in
                         Task { @MainActor in
                             guard let self,
                                   let index = self.messages.firstIndex(where: { $0.id == assistantID })
                             else { return }
                             self.messages[index].text = partial
+                            self.voice.feed(partial, final: false)
                         }
                     })
                 let detail = String(
@@ -207,6 +216,7 @@ private final class ChatViewModel: ObservableObject {
                     messages[index].text = result.text.isEmpty ? "(The model returned an empty response)" : result.text
                     messages[index].detail = detail
                 }
+                voice.feed(result.text, final: true)
                 print("[generation] \(detail)")
                 if CommandLine.arguments.contains("--bench-second"),
                    CommandLine.arguments.contains("--bench-35b") {
@@ -260,10 +270,14 @@ private final class ChatViewModel: ObservableObject {
         }
     }
 
-    func stop() { generationTask?.cancel() }
+    func stop() {
+        generationTask?.cancel()
+        voice.stop()
+    }
 
     func newConversation() {
         guard !isRunning, selectedModel != nil else { return }
+        voice.stop()
         messages.removeAll()
         input = ""
         phase = .ready
@@ -303,12 +317,16 @@ private final class ChatViewModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var chat = ChatViewModel()
     @FocusState private var inputFocused: Bool
+    @StateObject private var listener = VoiceInput()
+    @StateObject private var lock = LockGate()
+    @State private var showSettings = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private let suggestions = [
-        "What is artificial intelligence?",
-        "How do LLMs understand context?",
-        "Tell me about renewable energy",
-        "Write a short poem about autumn",
+        "What should I do first today, my queen?",
+        "Roast my to-do list",
+        "Give me a 5-minute break plan",
+        "Teach me one useful thing",
     ]
 
     var body: some View {
@@ -363,6 +381,83 @@ struct ContentView: View {
                 }
             }
         }
+        .task {
+            await lock.unlock()
+            // Assistant mode: open straight into Lucy 8B unless a bench/smoke flag chose a model.
+            let flagged = CommandLine.arguments.contains {
+                $0.hasPrefix("--model=") || $0.hasPrefix("--bench") || $0.hasPrefix("--smoke")
+            }
+            if !flagged, chat.selectedModel == nil, chat.isInstalled(.edge8) {
+                chat.choose(.edge8)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ListenRequest.notification)) { _ in
+            if chat.phase == .ready {
+                ListenRequest.pending = false
+                startListening()
+            }
+        }
+        .onChange(of: chat.phase) {
+            if chat.phase == .ready, ListenRequest.pending {
+                ListenRequest.pending = false
+                startListening()
+            }
+        }
+        .onChange(of: scenePhase) {
+            switch scenePhase {
+            case .background: lock.lockIfEnabled()
+            case .active: Task { await lock.unlock() }
+            default: break
+            }
+        }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        .overlay { if listener.state == .listening { listeningOverlay } }
+        .overlay { if lock.isLocked { lockedOverlay } }
+    }
+
+    private func startListening() {
+        guard chat.phase == .ready, listener.state != .listening else { return }
+        chat.voice.stop()
+        Task {
+            await listener.start { text in
+                chat.input = text
+                chat.send()
+            }
+        }
+    }
+
+    private var listeningOverlay: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            Image(systemName: "waveform")
+                .font(.system(size: 54, weight: .semibold))
+                .foregroundStyle(.red)
+                .symbolEffect(.variableColor.iterative)
+            Text(listener.transcript.isEmpty ? "Speak, minion…" : listener.transcript)
+                .font(.title3.weight(.medium))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+            HStack(spacing: 14) {
+                Button("Cancel") { listener.cancel() }
+                    .buttonStyle(.bordered)
+                Button("Done") { listener.finish() }
+                    .buttonStyle(.borderedProminent).tint(.red)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black.opacity(0.88))
+    }
+
+    private var lockedOverlay: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "lock.fill").font(.system(size: 44)).foregroundStyle(.red)
+            Text("Lucy is locked").font(.title2.weight(.semibold))
+            Button("Unlock") { Task { await lock.unlock() } }
+                .buttonStyle(.borderedProminent).tint(.red)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
     }
 
     private var modelPicker: some View {
@@ -413,6 +508,14 @@ struct ContentView: View {
             Text(chat.selectedModel?.title ?? "Lucy")
                 .font(.headline.weight(.semibold))
             Spacer()
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 38, height: 38)
+                    .background(.white.opacity(0.07), in: Circle())
+            }
+            .foregroundStyle(.white)
+            .accessibilityLabel("Settings")
             Button(action: chat.chooseAnotherModel) {
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.system(size: 15, weight: .semibold))
@@ -469,10 +572,10 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 18) {
                 Spacer(minLength: 90)
-                Text("edge0")
+                Text("Lucy")
                     .font(.system(size: 58, weight: .medium, design: .rounded))
                     .tracking(-3)
-                Text("Private AI, running locally on your iPhone")
+                Text("Your tyrant queen. Offline, on your iPhone.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -529,8 +632,22 @@ struct ContentView: View {
     }
 
     private var composer: some View {
+        VStack(spacing: 6) {
+        if case .unavailable(let reason) = listener.state {
+            Text(reason).font(.caption).foregroundStyle(.orange)
+        }
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Ask anything…", text: $chat.input, axis: .vertical)
+            Button(action: startListening) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 45, height: 45)
+                    .background(Color.red.opacity(0.85), in: Circle())
+            }
+            .disabled(chat.phase != .ready)
+            .opacity(chat.phase == .ready ? 1 : 0.5)
+            .accessibilityLabel("Talk to Lucy")
+            TextField("Command me, minion…", text: $chat.input, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($inputFocused)
                 .submitLabel(.send)
@@ -559,6 +676,7 @@ struct ContentView: View {
                        chat.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             .opacity(chat.phase == .preparing ? 0.5 : 1)
             .accessibilityLabel(chat.phase == .generating ? "Stop" : "Send")
+        }
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)

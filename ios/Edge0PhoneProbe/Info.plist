@@ -24,6 +24,12 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Lucy listens when you press the mic or the Action Button.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Lucy turns your voice into text on this iPhone. Nothing leaves the device.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Lock Lucy so only you can open her.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -892,3 +892,11 @@ and the mic button (first in the HStack):
   5. Gear → change voice → Preview; set your name → new chat → Lucy uses it.
   6. iPhone Settings → Action Button → Shortcut → Lucy → Talk to Lucy; press button → app opens listening.
   7. Enable Face ID lock → leave app → reopen → Face ID prompt.
+
+---
+
+## Amendment (2026-10-09): voice options 1–3 added to Build 1
+- **Devil effect (option 1):** `LucyCore/DevilEffect.swift` (strength 0–1 → pitch −700 cents, distortion 25 %, reverb 30 %, tested in `DevilEffectTests`) and app-side `DevilVoicePlayer.swift` (`AVSpeechSynthesizer.write` → AVAudioEngine: TimePitch → Distortion(.multiDistortedSquared) → Reverb(.largeChamber)). `VoiceOutput` routes through it when strength > 0.01; default strength 0.6; Settings slider `PrefKey.devilEffect`.
+- **More Apple voices (option 2):** Settings voice picker gains "Show all languages"; footer points to Spoken Content → Voices for Enhanced/Premium and character voices.
+- **Personal Voice (option 3):** Settings "Use my Personal Voice" → `AVSpeechSynthesizer.requestPersonalVoiceAuthorization()`; personal voices listed first and labelled. Consent note shown.
+- Device checklist additions: slide devil effect 0 → 100 % and Preview; pick a Premium voice; authorize Personal Voice (if one exists) and Preview.
