@@ -14,9 +14,11 @@ public struct Edge0GenerationResult: Sendable {
 }
 
 private enum Edge0ChatTemplate8B {
-    static func firstTurn(_ text: String, thinking: Bool) -> String {
-        "<role>SYSTEM</role>detailed thinking \(thinking ? "on" : "off")<|role_end|>" +
-        "<role>HUMAN</role>\(text)<|role_end|>" + assistantPrefix(thinking: thinking)
+    static func firstTurn(_ text: String, thinking: Bool, system: String? = nil) -> String {
+        let persona = system?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let prefix = persona.isEmpty ? "" : persona + "\n"
+        return "<role>SYSTEM</role>\(prefix)detailed thinking \(thinking ? "on" : "off")<|role_end|>" +
+            "<role>HUMAN</role>\(text)<|role_end|>" + assistantPrefix(thinking: thinking)
     }
 
     static func nextTurn(_ text: String, thinking: Bool) -> String {
@@ -86,18 +88,20 @@ public final class Edge0ChatEngine: @unchecked Sendable {
         maxTokens: Int = 2048,
         thinking: Bool = false,
         seed: UInt64? = nil,
+        systemPrompt: String? = nil,
         onText: @escaping @Sendable (String) -> Void = { _ in },
         shouldContinue: @escaping @Sendable () -> Bool = { true }
     ) throws -> Edge0GenerationResult {
         try Device.withDefaultDevice(Self.runtimeDevice) {
             try generateReply(to: userText, maxTokens: maxTokens,
-                              thinking: thinking, seed: seed,
+                              thinking: thinking, seed: seed, systemPrompt: systemPrompt,
                               onText: onText, shouldContinue: shouldContinue)
         }
     }
 
     private func generateReply(
         to userText: String, maxTokens: Int, thinking: Bool, seed: UInt64?,
+        systemPrompt: String?,
         onText: @escaping @Sendable (String) -> Void,
         shouldContinue: @escaping @Sendable () -> Bool
     ) throws -> Edge0GenerationResult {
@@ -107,7 +111,7 @@ public final class Edge0ChatEngine: @unchecked Sendable {
 
         let prompt = hasConversationContext
             ? Edge0ChatTemplate8B.nextTurn(trimmed, thinking: thinking)
-            : Edge0ChatTemplate8B.firstTurn(trimmed, thinking: thinking)
+            : Edge0ChatTemplate8B.firstTurn(trimmed, thinking: thinking, system: systemPrompt)
         let promptIDs = try tokenizer.encode(prompt)
         guard !promptIDs.isEmpty else { throw M1Error.invalid("Tokenizer returned an empty prompt") }
 
