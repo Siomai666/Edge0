@@ -1,0 +1,86 @@
+# Edge0Phone — unsigned iPhone build on a GitHub-hosted Mac.
+#
+# Put this file in YOUR FORK of Edge0-AI/Edge0 at:
+#   .github/workflows/build-ios.yml
+# Then: Actions tab -> "Build Edge0Phone (unsigned)" -> Run workflow.
+# Output: an artifact "Edge0Phone-ipa" containing Edge0Phone.ipa (~5 GB),
+# which you sign + install from Windows with Sideloadly.
+#
+# Only the 8B model is packed: 35B makes a ~20 GB app, which does not fit
+# the runner disk or a sensible download.
+
+name: Build Edge0Phone (unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Bundle ID (any unique reverse-DNS string)"
+        required: true
+        default: "com.yourname.edge0phone"
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: ios
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode + free disk
+        run: |
+          xcodebuild -version
+          df -h .
+
+      - name: Install Metal toolchain (needed by MLX on newer Xcode)
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Download Edge0 8B weights into Models/
+        run: |
+          python3 -m venv .venv-tools
+          .venv-tools/bin/python -m pip install --quiet --upgrade pip huggingface_hub
+          .venv-tools/bin/hf download Edge0/Edge0-8B-A1B-preview \
+            --local-dir Models/Edge0-8B-A1B-preview
+          rm -rf Models/Edge0-8B-A1B-preview/.cache
+          du -sh Models
+          df -h .
+
+      - name: Build (device, unsigned)
+        run: |
+          xcodebuild -project Edge0PhoneProbe.xcodeproj \
+            -scheme Edge0Phone \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath .build-device \
+            -skipPackagePluginValidation \
+            PRODUCT_BUNDLE_IDENTIFIER="${{ inputs.bundle_id }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package .ipa (free disk first)
+        run: |
+          # Weights are now inside the .app; drop the source copy to make room.
+          rm -rf Models/Edge0-8B-A1B-preview .venv-tools
+          APP=$(find .build-device/Build/Products -maxdepth 2 -name 'Edge0Phone.app' -type d | head -1)
+          echo "App: $APP"
+          mkdir -p Payload
+          mv "$APP" Payload/
+          rm -rf .build-device
+          # -0 = store only; weights don't compress and this saves time.
+          zip -0 -qry Edge0Phone.ipa Payload
+          rm -rf Payload
+          ls -lh Edge0Phone.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Edge0Phone-ipa
+          path: ios/Edge0Phone.ipa
+          compression-level: 0
+          retention-days: 3
