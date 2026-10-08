@@ -40,6 +40,9 @@ jobs:
       - name: Install Metal toolchain (needed by MLX on newer Xcode)
         run: xcodebuild -downloadComponent MetalToolchain || true
 
+      - name: LucyCore unit tests
+        run: swift test --package-path LucyCore
+
       - name: Download Edge0 8B weights into Models/
         run: |
           python3 -m venv .venv-tools
