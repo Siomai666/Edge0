@@ -35,8 +35,9 @@ final class VoiceInput: ObservableObject {
             req.shouldReportPartialResults = true
             let input = engine.inputNode
             input.removeTap(onBus: 0)
-            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
-                req.append(buffer)
+            guard Self.installTap(on: input, feeding: req) else {
+                state = .unavailable("No microphone input available right now.")
+                return
             }
             engine.prepare()
             try engine.start()
@@ -44,10 +45,7 @@ final class VoiceInput: ObservableObject {
             transcript = ""
             self.onFinish = onFinish
             state = .listening
-            task = recognizer.recognitionTask(with: req) { [weak self] result, error in
-                let text = result?.bestTranscription.formattedString
-                let isFinal = result?.isFinal ?? false
-                let failed = error != nil
+            task = Self.recognize(with: recognizer, request: req) { [weak self] text, isFinal, failed in
                 Task { @MainActor in self?.handle(text: text, isFinal: isFinal, failed: failed) }
             }
             armSilenceTimer()
@@ -102,11 +100,36 @@ final class VoiceInput: ObservableObject {
         task = nil
     }
 
-    private static func authorize() async -> Bool {
+    // The callbacks below are invoked by iOS on background / real-time audio threads. They must
+    // be created in a nonisolated context: a closure formed inside this @MainActor class inherits
+    // main-actor isolation, and Swift 6 traps at runtime when iOS calls it off the main thread.
+
+    private nonisolated static func authorize() async -> Bool {
         let speechOK = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
         }
         guard speechOK else { return false }
         return await AVAudioApplication.requestRecordPermission()
+    }
+
+    private nonisolated static func installTap(
+        on input: AVAudioInputNode, feeding request: SFSpeechAudioBufferRecognitionRequest
+    ) -> Bool {
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return false }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+        return true
+    }
+
+    private nonisolated static func recognize(
+        with recognizer: SFSpeechRecognizer,
+        request: SFSpeechAudioBufferRecognitionRequest,
+        onUpdate: @escaping @Sendable (String?, Bool, Bool) -> Void
+    ) -> SFSpeechRecognitionTask {
+        recognizer.recognitionTask(with: request) { result, error in
+            onUpdate(result?.bestTranscription.formattedString, result?.isFinal ?? false, error != nil)
+        }
     }
 }
