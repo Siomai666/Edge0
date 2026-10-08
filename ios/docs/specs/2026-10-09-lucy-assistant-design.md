@@ -1,15 +1,15 @@
-# Pablo Jhob — Personal Voice Assistant (Design)
+# Lucy — Personal Voice Assistant (Design)
 
 Date: 2026-10-09 · Target device: iPhone 17e (iOS 26), sideloaded via Sideloadly
 Base: Edge0Phone iOS app (`ios/`), Edge0 8B on-device model, offline.
 
 ## Goal
-Turn the Edge0Phone chat app ("Pablo Jhob") into a Siri-like personal assistant that is
+Turn the Edge0Phone chat app ("Lucy") into a Siri-like personal assistant that is
 *different* from Siri: own personality and voice, remembers the user, real conversation,
 fully offline/private, and able to act on the phone through approved iOS APIs.
 
 ## Non-goals
-- Replacing Siri at the OS level, background wake word ("Hey Pablo"), reading other apps'
+- Replacing Siri at the OS level, background wake word ("Hey Lucy"), reading other apps'
   screens/notifications, answering calls — not possible on stock iOS.
 - Internet features (weather/news) — breaks the offline/egress posture.
 - Share extension (second app target) — deferred.
@@ -27,8 +27,21 @@ fully offline/private, and able to act on the phone through approved iOS APIs.
 5. Bundle ID stays `com.siomai666.edge0phone` so Documents (model weights, memory DB) survive
    reinstalls.
 
+## Persona: Lucy (default preset)
+- **Name:** Lucy. Icon: grinning red devil.
+- **Personality — tyrant:** bossy, commanding, impatient; gives orders ("Drink water. Now."),
+  calls the user her "minion"/"servant", demands progress reports, treats tasks as royal decrees.
+- **Humor — devil:** sarcastic, mischievous, dark-but-playful teasing, "deals with the devil"
+  jokes, evil laughs ("mwahaha"), mock threats that are obviously jokes.
+- **Hard limits (always on, not user-editable):** still actually helpful and accurate; never
+  genuinely abusive, demeaning about identity, threatening, or encouraging harm; drops the act
+  and answers plainly for safety/health/emergency topics or if the user says "serious mode".
+- Other presets (calm coach, buddy, secretary) remain selectable in Settings.
+- System prompt for the persona must fit the token budget (target ≤ 60 tokens), e.g.:
+  `You are Lucy, a tyrant queen with a devil's humor. Bossy, sarcastic, teasing, but truly helpful and accurate. Short answers. Serious and kind for safety or health topics.`
+
 ## Architecture
-New pure-Swift module **`PabloCore`** (SwiftPM target, no MLX/UIKit deps → testable on macOS):
+New pure-Swift module **`LucyCore`** (SwiftPM target, no MLX/UIKit deps → testable on macOS):
 
 | Unit | Responsibility | Interface |
 |---|---|---|
@@ -45,7 +58,7 @@ App-side (in `Edge0PhoneProbe/`, split out of the 568-line ContentView into focu
 |---|---|
 | `VoiceInput.swift` | SFSpeechRecognizer, `requiresOnDeviceRecognition = true`, push-to-talk + auto-stop on silence |
 | `VoiceOutput.swift` | AVSpeechSynthesizer, speaks streamed reply sentence-by-sentence |
-| `PabloIntents.swift` | App Intents: "Talk to Pablo" (opens app, starts listening) → Action Button / Siri / Control Center |
+| `LucyIntents.swift` | App Intents: "Talk to Lucy" (opens app, starts listening) → Action Button / Siri / Control Center |
 | `MemoryStore.swift` | SwiftData models: Profile, Fact, Conversation, Message; "forget X" |
 | `ActionRunner.swift` | executes confirmed actions: EventKit (reminders/calendar), AlarmKit/notifications (timers/alarms), URL schemes (open app), MFMessageCompose/mail (draft), `shortcuts://run-shortcut` for toggles |
 | `ProactiveScheduler.swift` | UNUserNotificationCenter daily briefing / recap / nudges |
@@ -56,18 +69,18 @@ Engine change (minimal): `Edge0ChatEngine.reply(..., systemPrompt: String?)` —
 existing `<role>SYSTEM</role>` block of `firstTurn` only. Default nil = today's behaviour.
 
 ## Data flow (one voice turn)
-Action Button → `TalkToPabloIntent` opens app → VoiceInput transcribes → app builds
+Action Button → `TalkToLucyIntent` opens app → VoiceInput transcribes → app builds
 `systemPrompt = Persona + MemorySummary` (first turn only) → engine streams text →
 ActionParser strips `<act>` blocks → VoiceOutput speaks visible text → each action shown as an
 **ActionCard**; user taps Confirm → ActionRunner executes → result line appended to chat.
 "Remember X" / "forget X" → handled as `note`/forget actions writing MemoryStore.
 
 ## Builds (each = one CI build + user device test)
-1. **Voice + Siri button**: VoiceInput, VoiceOutput, TalkToPablo intent, persona/voice picker,
+1. **Voice + Siri button**: VoiceInput, VoiceOutput, TalkToLucy intent, persona/voice picker,
    Face ID lock, `systemPrompt` engine hook, TTFT measurement shown in UI.
 2. **Memory**: SwiftData store, profile screen, notebook facts, saved chat list, forget/wipe.
 3. **Actions**: ActionParser + vocabulary, ActionCard, EventKit/AlarmKit/open-app/draft,
-   toggle shortcut (user installs a provided "Pablo Toggle" shortcut once), voice note → tasks.
+   toggle shortcut (user installs a provided "Lucy Toggle" shortcut once), voice note → tasks.
 4. **Proactive**: morning briefing, end-of-day recap, nudges, focus timer.
 5. **Extras**: two-way translator mode, voice games, Image Playground (if Apple Intelligence
    available on device), PDF/photo Q&A (PDFKit + Vision OCR), daily fact/joke.
@@ -81,11 +94,11 @@ ActionParser strips `<act>` blocks → VoiceOutput speaks visible text → each 
 - Memory DB corruption → move aside, start fresh, tell user.
 
 ## Testing
-- `PabloCoreTests` (XCTest, macOS runner, run in CI before the device build): persona prompt
+- `LucyCoreTests` (XCTest, macOS runner, run in CI before the device build): persona prompt
   budget, MemorySummary budget/priority, ActionParser (valid, malformed, unknown, multiple,
   injection inside user-quoted text), NoteToTasks parsing, BriefingComposer.
 - Per-build device checklist for the user (e.g. "say: remind me at 3 pm to check S8051").
-- CI gate: workflow fails if PabloCore tests fail.
+- CI gate: workflow fails if LucyCore tests fail.
 
 ## Risks
 - TTFT with system prompt may be too slow → mitigation: shrink budget; prewarm the system
