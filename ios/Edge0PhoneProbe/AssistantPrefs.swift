@@ -7,7 +7,8 @@ enum PrefKey {
     static let voiceID = "lucy.voiceID"
     static let speak = "lucy.speakReplies"
     static let faceID = "lucy.faceIDLock"
-    static let devilEffect = "lucy.devilEffect"
+    static let voiceStyle = "lucy.voiceStyle"
+    static let effectStrength = "lucy.effectStrength"
 }
 
 enum AssistantPrefs {
@@ -21,7 +22,10 @@ enum AssistantPrefs {
         guard let v = UserDefaults.standard.string(forKey: PrefKey.voiceID), !v.isEmpty else { return nil }
         return v
     }
-    static var devilEffect: Double {
-        UserDefaults.standard.object(forKey: PrefKey.devilEffect) as? Double ?? DevilEffect.defaultStrength
+    static var voiceStyle: VoiceStyle {
+        VoiceStyle(rawValue: UserDefaults.standard.string(forKey: PrefKey.voiceStyle) ?? "") ?? .defaultStyle
+    }
+    static var effectStrength: Double {
+        UserDefaults.standard.object(forKey: PrefKey.effectStrength) as? Double ?? VoiceStyle.defaultStrength
     }
 }

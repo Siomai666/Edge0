@@ -9,7 +9,8 @@ struct SettingsView: View {
     @AppStorage(PrefKey.voiceID) private var voiceID = ""
     @AppStorage(PrefKey.speak) private var speakReplies = true
     @AppStorage(PrefKey.faceID) private var faceIDLock = false
-    @AppStorage(PrefKey.devilEffect) private var devilEffect = DevilEffect.defaultStrength
+    @AppStorage(PrefKey.voiceStyle) private var styleRaw = VoiceStyle.defaultStyle.rawValue
+    @AppStorage(PrefKey.effectStrength) private var effectStrength = VoiceStyle.defaultStrength
     @State private var allLanguages = false
     @State private var personalVoiceNote: String?
     @State private var voiceListVersion = 0
@@ -52,22 +53,25 @@ struct SettingsView: View {
     private var voiceSection: some View {
         Section {
             Toggle("Speak replies", isOn: $speakReplies)
+            Picker("Style", selection: $styleRaw) {
+                ForEach(VoiceStyle.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+            }
             Picker("Voice", selection: $voiceID) {
-                Text("Default").tag("")
+                Text("Automatic (best for style)").tag("")
                 ForEach(voices, id: \.identifier) { voice in
                     Text(Self.label(for: voice)).tag(voice.identifier)
                 }
             }
             Toggle("Show all languages", isOn: $allLanguages)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Devil effect: \(Int((devilEffect * 100).rounded()))%")
-                Slider(value: $devilEffect, in: 0...1, step: 0.1)
+                Text("Effect strength: \(Int((effectStrength * 100).rounded()))%")
+                Slider(value: $effectStrength, in: 0...1, step: 0.1)
             }
             Button("Preview voice") { preview.speak(preset.sampleLine) }
         } header: {
             Text("Voice")
         } footer: {
-            Text("More voices (Eddy, Flo, Reed, Sandy, Shelley, other accents and character voices): iPhone Settings → Accessibility → Spoken Content → Voices. Download an Enhanced or Premium voice for the best quality, then pick it here.")
+            Text("Cold villain queen sounds best with a British voice: iPhone Settings → Accessibility → Spoken Content → Voices → English → download an Enhanced or Premium United Kingdom voice. Lucy picks it automatically when Voice is Automatic.")
         }
     }
 

@@ -3,7 +3,7 @@ import Foundation
 import LucyCore
 
 /// Renders speech with `AVSpeechSynthesizer.write` and plays it through pitch, distortion and
-/// reverb for Lucy's devil voice. Utterances play one at a time; all state lives on `queue`.
+/// reverb for Lucy's voice styles. Utterances play one at a time; all state lives on `queue`.
 final class DevilVoicePlayer: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     private let queue = DispatchQueue(label: "lucy.devil-voice")
     private let synth = AVSpeechSynthesizer()
@@ -30,8 +30,7 @@ final class DevilVoicePlayer: NSObject, AVSpeechSynthesizerDelegate, @unchecked 
         reverb.loadFactoryPreset(.largeChamber)
     }
 
-    func speak(_ utterance: AVSpeechUtterance, strength: Double) {
-        let p = DevilEffect.parameters(strength: strength)
+    func speak(_ utterance: AVSpeechUtterance, effect p: VoiceEffectParameters) {
         queue.async {
             self.pitch.pitch = p.pitchCents
             self.distortion.wetDryMix = p.distortionWetDryMix

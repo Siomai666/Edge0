@@ -2,7 +2,7 @@
 import Foundation
 import LucyCore
 
-/// Speaks Lucy's replies sentence by sentence, with the optional devil effect.
+/// Speaks Lucy's replies sentence by sentence in the chosen voice style.
 @MainActor
 final class VoiceOutput: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published private(set) var isSpeaking = false
@@ -35,19 +35,35 @@ final class VoiceOutput: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         let cleaned = SpeechText.clean(text)
         guard !cleaned.isEmpty else { return }
         AudioSession.activateForPlayback()
-        let preset = AssistantPrefs.persona.preset
+        let style = AssistantPrefs.voiceStyle
         let utterance = AVSpeechUtterance(string: cleaned)
-        utterance.voice = AssistantPrefs.voiceID.flatMap { AVSpeechSynthesisVoice(identifier: $0) }
-            ?? AVSpeechSynthesisVoice(language: "en-US")
-        utterance.pitchMultiplier = preset.pitch
-        utterance.rate = preset.rate
+        utterance.voice = Self.voice(for: style)
+        utterance.pitchMultiplier = style.pitch
+        utterance.rate = style.rate
         isSpeaking = true
-        let strength = AssistantPrefs.devilEffect
-        if DevilEffect.isActive(strength: strength) {
-            devil.speak(utterance, strength: strength)
+        let effect = style.effect(strength: AssistantPrefs.effectStrength)
+        if effect.isAudible {
+            devil.speak(utterance, effect: effect)
         } else {
             synth.speak(utterance)
         }
+    }
+
+    /// The user's chosen voice, else the best installed voice for the style.
+    static func voice(for style: VoiceStyle) -> AVSpeechSynthesisVoice? {
+        if let id = AssistantPrefs.voiceID, let chosen = AVSpeechSynthesisVoice(identifier: id) {
+            return chosen
+        }
+        let installed = AVSpeechSynthesisVoice.speechVoices()
+        let candidates = installed.map {
+            VoiceCandidate(id: $0.identifier, language: $0.language, isFemale: $0.gender == .female,
+                           quality: $0.quality.rawValue,
+                           isPersonal: $0.voiceTraits.contains(.isPersonalVoice))
+        }
+        if let id = VoicePicker.pick(from: candidates, style: style) {
+            return AVSpeechSynthesisVoice(identifier: id)
+        }
+        return AVSpeechSynthesisVoice(language: style.preferredLanguage)
     }
 
     func stop() {

@@ -30,25 +30,7 @@ public enum PersonaPreset: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// AVSpeechUtterance pitchMultiplier (0.5–2.0).
-    public var pitch: Float {
-        switch self {
-        case .lucyTyrant: 0.85
-        case .calmCoach: 0.95
-        case .buddy: 1.05
-        case .secretary: 1.0
-        }
-    }
 
-    /// AVSpeechUtterance rate (0–1; system default 0.5).
-    public var rate: Float {
-        switch self {
-        case .lucyTyrant: 0.48
-        case .calmCoach: 0.45
-        case .buddy: 0.52
-        case .secretary: 0.5
-        }
-    }
 
     public var sampleLine: String {
         switch self {

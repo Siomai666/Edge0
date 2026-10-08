@@ -27,8 +27,6 @@ final class PersonaTests: XCTestCase {
             XCTAssertLessThanOrEqual(TokenEstimate.approximate(prompt), Persona.tokenBudget, "\(preset)")
             XCTAssertFalse(preset.title.isEmpty)
             XCTAssertFalse(preset.sampleLine.isEmpty)
-            XCTAssertTrue((0.5...2.0).contains(preset.pitch))
-            XCTAssertTrue((0.0...1.0).contains(preset.rate))
         }
     }
 
