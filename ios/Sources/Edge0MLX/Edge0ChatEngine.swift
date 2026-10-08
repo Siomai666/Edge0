@@ -49,12 +49,15 @@ public final class Edge0ChatEngine: @unchecked Sendable {
         #endif
     }
 
-    public init(modelURL: URL, progress: (String) -> Void = { _ in }) throws {
+    /// `weightsURL` overrides `<modelURL>/model.safetensors`, so the 4.2 GiB weights can live
+    /// outside the app bundle (iOS cannot install an IPA with a single file >= 4 GiB).
+    public init(modelURL: URL, weightsURL: URL? = nil,
+                progress: (String) -> Void = { _ in }) throws {
         let built = try Device.withDefaultDevice(Self.runtimeDevice) {
             let configuration = try Edge0Configuration8B.load(from: modelURL.appendingPathComponent("config.json"))
             let tokenizer = try Edge0Tokenizer8B(contentsOf: modelURL.appendingPathComponent("tokenizer.json"))
             let store = try ExpertTensorStore(
-                modelURL: modelURL.appendingPathComponent("model.safetensors"),
+                modelURL: weightsURL ?? modelURL.appendingPathComponent("model.safetensors"),
                 expertCount: configuration.numExperts
             )
             let model = try StreamingEdge0Model8B(

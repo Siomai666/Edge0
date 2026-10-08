@@ -3,8 +3,9 @@
 # Put this file in YOUR FORK of Edge0-AI/Edge0 at:
 #   .github/workflows/build-ios.yml
 # Then: Actions tab -> "Build Edge0Phone (unsigned)" -> Run workflow.
-# Output: an artifact "Edge0Phone-ipa" containing Edge0Phone.ipa (~5 GB),
-# which you sign + install from Windows with Sideloadly.
+# Output: an artifact "Edge0Phone-ipa" containing Edge0Phone.ipa (~100 MB),
+# which you sign + install from Windows with Sideloadly. The 8B weights
+# (model.safetensors, 4.2 GiB) are copied separately via iTunes File Sharing.
 #
 # Only the 8B model is packed: 35B makes a ~20 GB app, which does not fit
 # the runner disk or a sensible download.
@@ -46,6 +47,13 @@ jobs:
           .venv-tools/bin/hf download Edge0/Edge0-8B-A1B-preview \
             --local-dir Models/Edge0-8B-A1B-preview
           rm -rf Models/Edge0-8B-A1B-preview/.cache
+          # iOS cannot install an IPA containing a single file >= 4 GiB, so the
+          # 4.2 GiB weights stay out of the bundle; copy model.safetensors into the
+          # app's Documents via iTunes File Sharing instead. Drop demo media too.
+          rm -f Models/Edge0-8B-A1B-preview/model.safetensors \
+                Models/Edge0-8B-A1B-preview/*.mp4 Models/Edge0-8B-A1B-preview/*.jpg \
+                Models/Edge0-8B-A1B-preview/*.png
+          ls -la Models/Edge0-8B-A1B-preview
           du -sh Models
           df -h .
 
@@ -65,7 +73,6 @@ jobs:
 
       - name: Package .ipa (free disk first)
         run: |
-          # Weights are now inside the .app; drop the source copy to make room.
           rm -rf Models/Edge0-8B-A1B-preview .venv-tools
           APP=$(find .build-device/Build/Products -maxdepth 2 -name 'Edge0Phone.app' -type d | head -1)
           echo "App: $APP"

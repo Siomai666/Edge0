@@ -38,12 +38,12 @@ private actor ChatRuntime {
     }
     private var engine: LoadedEngine?
 
-    func load(_ model: LocalModel, modelURL: URL) throws {
+    func load(_ model: LocalModel, modelURL: URL, weightsURL: URL?) throws {
         // Do not keep both models alive while switching; 35B is memory constrained.
         engine = nil
         switch model {
         case .edge8:
-            engine = .edge8(try Edge0ChatEngine(modelURL: modelURL))
+            engine = .edge8(try Edge0ChatEngine(modelURL: modelURL, weightsURL: weightsURL))
         case .edge35b:
             engine = .edge35b(try Edge0ChatEngine35B(modelURL: modelURL))
         }
@@ -128,7 +128,8 @@ private final class ChatViewModel: ObservableObject {
         switch model {
         case .edge8:
             return FileManager.default.fileExists(
-                atPath: url.appendingPathComponent("model.safetensors").path)
+                atPath: url.appendingPathComponent("config.json").path)
+                && edge8WeightsURL(modelURL: url) != nil
         case .edge35b:
             return FileManager.default.fileExists(
                 atPath: url.appendingPathComponent("model.safetensors.index.json").path)
@@ -148,7 +149,9 @@ private final class ChatViewModel: ObservableObject {
         let url = resolveModelURL(model)
         Task {
             do {
-                try await runtime.load(model, modelURL: url)
+                try await runtime.load(
+                    model, modelURL: url,
+                    weightsURL: model == .edge8 ? edge8WeightsURL(modelURL: url) : nil)
                 if phase == .preparing { phase = .ready }
             } catch {
                 phase = .failed(Self.friendlyMessage(for: error))
@@ -265,6 +268,19 @@ private final class ChatViewModel: ObservableObject {
         input = ""
         phase = .ready
         Task { await runtime.reset() }
+    }
+
+    /// 8B weights: bundled copy if present, else `model.safetensors` copied into the app's
+    /// Documents folder (iTunes/Finder File Sharing or the Files app).
+    private func edge8WeightsURL(modelURL: URL) -> URL? {
+        let fm = FileManager.default
+        var candidates = [modelURL.appendingPathComponent("model.safetensors")]
+        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+            candidates.append(docs.appendingPathComponent("model.safetensors"))
+            candidates.append(docs.appendingPathComponent(LocalModel.edge8.folderName, isDirectory: true)
+                .appendingPathComponent("model.safetensors"))
+        }
+        return candidates.first { fm.fileExists(atPath: $0.path) }
     }
 
     private func resolveModelURL(_ model: LocalModel) -> URL {
